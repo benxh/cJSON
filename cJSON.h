@@ -85,42 +85,74 @@ then using the CJSON_API_VISIBILITY flag to "export" the same symbols the way CJ
 
 #include <stddef.h>
 
+#define ENABLE_VALUE_UNION
+#define ENABLE_VALUE_INT
+#define ENABLE_VALUE_INT_LONG_LONG
+#define ENABLE_CREATE_WITH_NAME
+
 /* cJSON Types: */
-#define cJSON_Invalid (0)
-#define cJSON_False  (1 << 0)
-#define cJSON_True   (1 << 1)
-#define cJSON_NULL   (1 << 2)
-#define cJSON_Number (1 << 3)
-#define cJSON_String (1 << 4)
-#define cJSON_Array  (1 << 5)
-#define cJSON_Object (1 << 6)
-#define cJSON_Raw    (1 << 7) /* raw json */
+#define cJSON_Invalid 				(0)
+#define cJSON_False  					(1 << 0)
+#define cJSON_True   					(1 << 1)
+#define cJSON_NULL   					(1 << 2)
+#define cJSON_Number 					(1 << 3)
+#define cJSON_String 					(1 << 4)
+#define cJSON_Array  					(1 << 5)
+#define cJSON_Object 					(1 << 6)
+#define cJSON_Raw    					(1 << 7) /* raw json */
 
-#define cJSON_IsReference 256
-#define cJSON_StringIsConst 512
+#if defined(ENABLE_VALUE_INT) && defined(ENABLE_VALUE_INT_LONG_LONG)	
+#define cJSON_Int							(1 << 8)
+#define cJSON_IsReference 		(1 << 9) // 256
+#define cJSON_StringIsConst 	(1 << 10) // 512
+#define TYPE_MASK							0x1FF
+#else
+#define cJSON_IsReference 		(1 << 8) // 256
+#define cJSON_StringIsConst 	(1 << 9) // 512
+#define TYPE_MASK							0xFF
+#endif
 
+
+
+
+
+#pragma pack(1)
 /* The cJSON structure: */
 typedef struct cJSON
 {
     /* next/prev allow you to walk array/object chains. Alternatively, use GetArraySize/GetArrayItem/GetObjectItem */
     struct cJSON *next;
-    struct cJSON *prev;
-    /* An array or object item will have a child pointer pointing to a chain of the items in the array/object. */
-    struct cJSON *child;
+    struct cJSON *prev;    
 
     /* The type of the item, as above. */
-    int type;
+    // int type;
+		short type;
 
-    /* The item's string, if type==cJSON_String  and type == cJSON_Raw */
-    char *valuestring;
-    /* writing to valueint is DEPRECATED, use cJSON_SetNumberValue instead */
-    int valueint;
-    /* The item's number, if type==cJSON_Number */
-    double valuedouble;
+#ifdef ENABLE_VALUE_UNION	
+		union {
+#else
+		struct {
+#endif	
+			/* An array or object item will have a child pointer pointing to a chain of the items in the array/object. */
+			struct cJSON *child;
+			/* The item's string, if type==cJSON_String  and type == cJSON_Raw */
+			char * v_string;
+#ifdef ENABLE_VALUE_INT			
+			/* writing to valueint is DEPRECATED, use cJSON_SetNumberValue instead */
+#if defined(ENABLE_VALUE_INT) && defined(ENABLE_VALUE_INT_LONG_LONG)						
+			long long v_int;
+#else			
+			int v_int;
+#endif			
+#endif			
+			/* The item's number, if type==cJSON_Number */
+			double v_double;
+		} value;
 
     /* The item's name string, if this item is the child of, or is in the list of subitems of an object. */
     char *string;
 } cJSON;
+#pragma pack()
 
 typedef struct cJSON_Hooks
 {
@@ -177,6 +209,9 @@ CJSON_PUBLIC(const char *) cJSON_GetErrorPtr(void);
 
 /* Check item type and return its value */
 CJSON_PUBLIC(char *) cJSON_GetStringValue(const cJSON * const item);
+#if defined(ENABLE_VALUE_INT) && defined(ENABLE_VALUE_INT_LONG_LONG)				
+CJSON_PUBLIC(long long) cJSON_GetIntValue(const cJSON * const item);
+#endif
 CJSON_PUBLIC(double) cJSON_GetNumberValue(const cJSON * const item);
 
 /* These functions check the type of an item */
@@ -185,24 +220,30 @@ CJSON_PUBLIC(cJSON_bool) cJSON_IsFalse(const cJSON * const item);
 CJSON_PUBLIC(cJSON_bool) cJSON_IsTrue(const cJSON * const item);
 CJSON_PUBLIC(cJSON_bool) cJSON_IsBool(const cJSON * const item);
 CJSON_PUBLIC(cJSON_bool) cJSON_IsNull(const cJSON * const item);
+#if defined(ENABLE_VALUE_INT) && defined(ENABLE_VALUE_INT_LONG_LONG)
+CJSON_PUBLIC(cJSON_bool) cJSON_IsInt(const cJSON * const item);
+#endif
 CJSON_PUBLIC(cJSON_bool) cJSON_IsNumber(const cJSON * const item);
 CJSON_PUBLIC(cJSON_bool) cJSON_IsString(const cJSON * const item);
 CJSON_PUBLIC(cJSON_bool) cJSON_IsArray(const cJSON * const item);
 CJSON_PUBLIC(cJSON_bool) cJSON_IsObject(const cJSON * const item);
 CJSON_PUBLIC(cJSON_bool) cJSON_IsRaw(const cJSON * const item);
 
+#ifndef ENABLE_CREATE_WITH_NAME
 /* These calls create a cJSON item of the appropriate type. */
 CJSON_PUBLIC(cJSON *) cJSON_CreateNull(void);
 CJSON_PUBLIC(cJSON *) cJSON_CreateTrue(void);
 CJSON_PUBLIC(cJSON *) cJSON_CreateFalse(void);
 CJSON_PUBLIC(cJSON *) cJSON_CreateBool(cJSON_bool boolean);
+#if defined(ENABLE_VALUE_INT) && defined(ENABLE_VALUE_INT_LONG_LONG)
+CJSON_PUBLIC(cJSON *) cJSON_CreateInt(long long integer);
+#endif
 CJSON_PUBLIC(cJSON *) cJSON_CreateNumber(double num);
 CJSON_PUBLIC(cJSON *) cJSON_CreateString(const char *string);
 /* raw json */
 CJSON_PUBLIC(cJSON *) cJSON_CreateRaw(const char *raw);
 CJSON_PUBLIC(cJSON *) cJSON_CreateArray(void);
 CJSON_PUBLIC(cJSON *) cJSON_CreateObject(void);
-
 /* Create a string where valuestring references a string so
  * it will not be freed by cJSON_Delete */
 CJSON_PUBLIC(cJSON *) cJSON_CreateStringReference(const char *string);
@@ -210,6 +251,45 @@ CJSON_PUBLIC(cJSON *) cJSON_CreateStringReference(const char *string);
  * they will not be freed by cJSON_Delete */
 CJSON_PUBLIC(cJSON *) cJSON_CreateObjectReference(const cJSON *child);
 CJSON_PUBLIC(cJSON *) cJSON_CreateArrayReference(const cJSON *child);
+#else
+CJSON_PUBLIC(cJSON *) cJSON_CreateNullWithName(const char * name);
+CJSON_PUBLIC(cJSON *) cJSON_CreateTrueWithName(const char * name);
+CJSON_PUBLIC(cJSON *) cJSON_CreateFalseWithName(const char * name);
+CJSON_PUBLIC(cJSON *) cJSON_CreateBoolWithName(const char * name, cJSON_bool boolean);
+#if defined(ENABLE_VALUE_INT) && defined(ENABLE_VALUE_INT_LONG_LONG)
+CJSON_PUBLIC(cJSON *) cJSON_CreateIntWithName(const char * name, long long integer);
+#endif
+CJSON_PUBLIC(cJSON *) cJSON_CreateNumberWithName(const char *name, double num);
+CJSON_PUBLIC(cJSON *) cJSON_CreateStringWithName(const char * name, const char *string);
+/* raw json */
+CJSON_PUBLIC(cJSON *) cJSON_CreateRawWithName(const char * name, const char *raw);
+CJSON_PUBLIC(cJSON *) cJSON_CreateArrayWithName(const char * name);
+CJSON_PUBLIC(cJSON *) cJSON_CreateObjectWithName(const char * name);
+/* Create a string where valuestring references a string so
+ * it will not be freed by cJSON_Delete */
+CJSON_PUBLIC(cJSON *) cJSON_CreateStringReferenceWithName(const char * name, const char *string);
+/* Create an object/array that only references it's elements so
+ * they will not be freed by cJSON_Delete */
+CJSON_PUBLIC(cJSON *) cJSON_CreateObjectReferenceWithName(const char * name, const cJSON *child);
+CJSON_PUBLIC(cJSON *) cJSON_CreateArrayReferenceWithName(const char * name, const cJSON *child);
+#define cJSON_CreateNull()	cJSON_CreateNullWithName(NULL)
+#define cJSON_CreateTrue()	cJSON_CreateTrueWithName(NULL)
+#define cJSON_CreateFalse()	cJSON_CreateFalseWithName(NULL)
+#define cJSON_CreateBool(boolean)	cJSON_CreateBoolWithName(NULL, boolean)
+#if defined(ENABLE_VALUE_INT) && defined(ENABLE_VALUE_INT_LONG_LONG)
+#define cJSON_CreateInt(integer)	cJSON_CreateIntWithName(NULL, integer)
+#endif
+#define cJSON_CreateNumber(num)	cJSON_CreateNumberWithName(NULL, num)
+#define cJSON_CreateString(string)	cJSON_CreateStringWithName(NULL, string)
+#define cJSON_CreateRaw(raw)	cJSON_CreateRawWithName(NULL, raw)
+#define cJSON_CreateArray()	cJSON_CreateArrayWithName(NULL)
+#define cJSON_CreateObject()	cJSON_CreateObjectWithName(NULL)
+#define cJSON_CreateStringReference(string) cJSON_CreateStringReferenceWithName(NULL, string)
+#define cJSON_CreateObjectReference(child) cJSON_CreateObjectReferenceWithName(NULL, child)
+#define cJSON_CreateArrayReference(child) cJSON_CreateArrayReferenceWithName(NULL, child)
+#endif
+
+
 
 /* These utilities create an Array of count items.
  * The parameter count cannot be greater than the number of elements in the number array, otherwise array access will be out of bounds.*/
@@ -265,6 +345,9 @@ CJSON_PUBLIC(cJSON*) cJSON_AddNullToObject(cJSON * const object, const char * co
 CJSON_PUBLIC(cJSON*) cJSON_AddTrueToObject(cJSON * const object, const char * const name);
 CJSON_PUBLIC(cJSON*) cJSON_AddFalseToObject(cJSON * const object, const char * const name);
 CJSON_PUBLIC(cJSON*) cJSON_AddBoolToObject(cJSON * const object, const char * const name, const cJSON_bool boolean);
+#if defined(ENABLE_VALUE_INT) && defined(ENABLE_VALUE_INT_LONG_LONG)				
+CJSON_PUBLIC(cJSON*) cJSON_AddIntToObject(cJSON * const object, const char * const name, const long long integer);
+#endif
 CJSON_PUBLIC(cJSON*) cJSON_AddNumberToObject(cJSON * const object, const char * const name, const double number);
 CJSON_PUBLIC(cJSON*) cJSON_AddStringToObject(cJSON * const object, const char * const name, const char * const string);
 CJSON_PUBLIC(cJSON*) cJSON_AddRawToObject(cJSON * const object, const char * const name, const char * const raw);
@@ -272,7 +355,14 @@ CJSON_PUBLIC(cJSON*) cJSON_AddObjectToObject(cJSON * const object, const char * 
 CJSON_PUBLIC(cJSON*) cJSON_AddArrayToObject(cJSON * const object, const char * const name);
 
 /* When assigning an integer value, it needs to be propagated to valuedouble too. */
-#define cJSON_SetIntValue(object, number) ((object) ? (object)->valueint = (object)->valuedouble = (number) : (number))
+#ifdef ENABLE_VALUE_UNION
+// #define cJSON_SetIntValue(object, number) ((object) ? cJSON_IsInt(object)) ? ((object)->value.v_int = (number)) : (number))
+#if defined(ENABLE_VALUE_INT) && defined(ENABLE_VALUE_INT_LONG_LONG)
+CJSON_PUBLIC(long long) cJSON_SetIntValue(cJSON *object, long long number);
+#endif
+#else
+#define cJSON_SetIntValue(object, number) ((object) ? ((object)->value.v_int = (object)->value.v_double = (number), (object->type = cJSON_Int)) : (number))
+#endif
 /* helper for the cJSON_SetNumberValue macro */
 CJSON_PUBLIC(double) cJSON_SetNumberHelper(cJSON *object, double number);
 #define cJSON_SetNumberValue(object, number) ((object != NULL) ? cJSON_SetNumberHelper(object, (double)number) : (number))
@@ -287,7 +377,7 @@ CJSON_PUBLIC(char*) cJSON_SetValuestring(cJSON *object, const char *valuestring)
 )
 
 /* Macro for iterating over an array or object */
-#define cJSON_ArrayForEach(element, array) for(element = (array != NULL) ? (array)->child : NULL; element != NULL; element = element->next)
+#define cJSON_ArrayForEach(element, array) for(element = (array != NULL) ? (array)->value.child : NULL; element != NULL; element = element->next)
 
 /* malloc/free objects using the malloc/free functions that have been set with cJSON_InitHooks */
 CJSON_PUBLIC(void *) cJSON_malloc(size_t size);

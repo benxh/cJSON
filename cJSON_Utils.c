@@ -212,7 +212,7 @@ CJSON_PUBLIC(char *) cJSONUtils_FindPointerFromObjectTo(const cJSON * const obje
     }
 
     /* recursively search all children of the object or array */
-    for (current_child = object->child; current_child != NULL; (void)(current_child = current_child->next), child_index++)
+    for (current_child = object->value.child; current_child != NULL; (void)(current_child = current_child->next), child_index++)
     {
         unsigned char *target_pointer = (unsigned char*)cJSONUtils_FindPointerFromObjectTo(current_child, target);
         /* found the target? */
@@ -261,7 +261,7 @@ CJSON_PUBLIC(char *) cJSONUtils_FindPointerFromObjectTo(const cJSON * const obje
 /* non broken version of cJSON_GetArrayItem */
 static cJSON *get_array_item(const cJSON *array, size_t item)
 {
-    cJSON *child = array ? array->child : NULL;
+    cJSON *child = array ? array->value.child : NULL;
     while ((child != NULL) && (item > 0))
     {
         item--;
@@ -323,7 +323,7 @@ static cJSON *get_item_from_pointer(cJSON * const object, const char * pointer, 
         }
         else if (cJSON_IsObject(current_element))
         {
-            current_element = current_element->child;
+            current_element = current_element->value.child;
             /* GetObjectItem. */
             while ((current_element != NULL) && !compare_pointers((unsigned char*)current_element->string, (const unsigned char*)pointer, case_sensitive))
             {
@@ -392,7 +392,7 @@ static void decode_pointer_inplace(unsigned char *string)
 /* non-broken cJSON_DetachItemFromArray */
 static cJSON *detach_item_from_array(cJSON *array, size_t which)
 {
-    cJSON *c = array->child;
+    cJSON *c = array->value.child;
     while (c && (which > 0))
     {
         c = c->next;
@@ -403,7 +403,7 @@ static cJSON *detach_item_from_array(cJSON *array, size_t which)
         /* item doesn't exist */
         return NULL;
     }
-    if (c != array->child)
+    if (c != array->value.child)
     {
         /* not the first element */
         c->prev->next = c->next;
@@ -412,13 +412,13 @@ static cJSON *detach_item_from_array(cJSON *array, size_t which)
     {
         c->next->prev = c->prev;
     }
-    if (c == array->child)
+    if (c == array->value.child)
     {
-        array->child = c->next;
+        array->value.child = c->next;
     }
     else if (c->next == NULL)
     {
-        array->child->prev = c->prev;
+        array->value.child->prev = c->prev;
     }
     /* make sure the detached item doesn't point anywhere anymore */
     c->prev = c->next = NULL;
@@ -598,7 +598,7 @@ static void sort_object(cJSON * const object, const cJSON_bool case_sensitive)
     {
         return;
     }
-    object->child = sort_list(object->child, case_sensitive);
+    object->value.child = sort_list(object->value.child, case_sensitive);
 }
 
 static cJSON_bool compare_json(cJSON *a, cJSON *b, const cJSON_bool case_sensitive)
@@ -612,7 +612,11 @@ static cJSON_bool compare_json(cJSON *a, cJSON *b, const cJSON_bool case_sensiti
     {
         case cJSON_Number:
             /* numeric mismatch. */
-            if ((a->valueint != b->valueint) || (!compare_double(a->valuedouble, b->valuedouble)))
+            if (
+#ifdef ENABLE_VALUE_INT							
+							(a->value.v_int != b->value.v_int) || 
+#endif						
+							(!compare_double(a->value.v_double, b->value.v_double)))
             {
                 return false;
             }
@@ -623,7 +627,7 @@ static cJSON_bool compare_json(cJSON *a, cJSON *b, const cJSON_bool case_sensiti
 
         case cJSON_String:
             /* string mismatch. */
-            if (strcmp(a->valuestring, b->valuestring) != 0)
+            if (strcmp(a->value.v_string, b->value.v_string) != 0)
             {
                 return false;
             }
@@ -633,7 +637,7 @@ static cJSON_bool compare_json(cJSON *a, cJSON *b, const cJSON_bool case_sensiti
             }
 
         case cJSON_Array:
-            for ((void)(a = a->child), b = b->child; (a != NULL) && (b != NULL); (void)(a = a->next), b = b->next)
+            for ((void)(a = a->value.child), b = b->value.child; (a != NULL) && (b != NULL); (void)(a = a->next), b = b->next)
             {
                 cJSON_bool identical = compare_json(a, b, case_sensitive);
                 if (!identical)
@@ -655,7 +659,7 @@ static cJSON_bool compare_json(cJSON *a, cJSON *b, const cJSON_bool case_sensiti
         case cJSON_Object:
             sort_object(a, case_sensitive);
             sort_object(b, case_sensitive);
-            for ((void)(a = a->child), b = b->child; (a != NULL) && (b != NULL); (void)(a = a->next), b = b->next)
+            for ((void)(a = a->value.child), b = b->value.child; (a != NULL) && (b != NULL); (void)(a = a->next), b = b->next)
             {
                 cJSON_bool identical = false;
                 /* compare object keys */
@@ -692,7 +696,7 @@ static cJSON_bool compare_json(cJSON *a, cJSON *b, const cJSON_bool case_sensiti
 /* non broken version of cJSON_InsertItemInArray */
 static cJSON_bool insert_item_in_array(cJSON *array, size_t which, cJSON *newitem)
 {
-    cJSON *child = array->child;
+    cJSON *child = array->value.child;
     while (child && (which > 0))
     {
         child = child->next;
@@ -715,9 +719,9 @@ static cJSON_bool insert_item_in_array(cJSON *array, size_t which, cJSON *newite
     child->prev = newitem;
 
     /* was it at the beginning */
-    if (child == array->child)
+    if (child == array->value.child)
     {
-        array->child = newitem;
+        array->value.child = newitem;
     }
     else
     {
@@ -747,32 +751,32 @@ static enum patch_operation decode_patch_operation(const cJSON * const patch, co
         return INVALID;
     }
 
-    if (strcmp(operation->valuestring, "add") == 0)
+    if (strcmp(operation->value.v_string, "add") == 0)
     {
         return ADD;
     }
 
-    if (strcmp(operation->valuestring, "remove") == 0)
+    if (strcmp(operation->value.v_string, "remove") == 0)
     {
         return REMOVE;
     }
 
-    if (strcmp(operation->valuestring, "replace") == 0)
+    if (strcmp(operation->value.v_string, "replace") == 0)
     {
         return REPLACE;
     }
 
-    if (strcmp(operation->valuestring, "move") == 0)
+    if (strcmp(operation->value.v_string, "move") == 0)
     {
         return MOVE;
     }
 
-    if (strcmp(operation->valuestring, "copy") == 0)
+    if (strcmp(operation->value.v_string, "copy") == 0)
     {
         return COPY;
     }
 
-    if (strcmp(operation->valuestring, "test") == 0)
+    if (strcmp(operation->value.v_string, "test") == 0)
     {
         return TEST;
     }
@@ -792,13 +796,13 @@ static void overwrite_item(cJSON * const root, const cJSON replacement)
     {
         cJSON_free(root->string);
     }
-    if (root->valuestring != NULL)
+    if (root->value.v_string != NULL)
     {
-        cJSON_free(root->valuestring);
+        cJSON_free(root->value.v_string);
     }
-    if (root->child != NULL)
+    if (root->value.child != NULL)
     {
-        cJSON_Delete(root->child);
+        cJSON_Delete(root->value.child);
     }
 
     memcpy(root, &replacement, sizeof(cJSON));
@@ -831,17 +835,25 @@ static int apply_patch(cJSON *object, const cJSON *patch, const cJSON_bool case_
     else if (opcode == TEST)
     {
         /* compare value: {...} with the given path */
-        status = !compare_json(get_item_from_pointer(object, path->valuestring, case_sensitive), get_object_item(patch, "value", case_sensitive), case_sensitive);
+        status = !compare_json(get_item_from_pointer(object, path->value.v_string, case_sensitive), get_object_item(patch, "value", case_sensitive), case_sensitive);
         goto cleanup;
     }
 
     /* special case for replacing the root */
-    if (path->valuestring[0] == '\0')
+    if (path->value.v_string[0] == '\0')
     {
         if (opcode == REMOVE)
         {
-            static const cJSON invalid = { NULL, NULL, NULL, cJSON_Invalid, NULL, 0, 0, NULL};
-
+#ifdef ENABLE_VALUE_UNION					
+            static const cJSON invalid = { NULL, NULL, cJSON_Invalid, NULL, NULL};
+#else
+						static const cJSON invalid = { NULL, NULL, cJSON_Invalid, NULL, NULL, 
+#ifdef ENABLE_VALUE_INT						
+						0,
+#endif						
+						0.0
+						NULL};
+#endif						
             overwrite_item(object, invalid);
 
             status = 0;
@@ -887,7 +899,7 @@ static int apply_patch(cJSON *object, const cJSON *patch, const cJSON_bool case_
     if ((opcode == REMOVE) || (opcode == REPLACE))
     {
         /* Get rid of old. */
-        cJSON *old_item = detach_path(object, (unsigned char*)path->valuestring, case_sensitive);
+        cJSON *old_item = detach_path(object, (unsigned char*)path->value.v_string, case_sensitive);
         if (old_item == NULL)
         {
             status = 13;
@@ -915,11 +927,11 @@ static int apply_patch(cJSON *object, const cJSON *patch, const cJSON_bool case_
 
         if (opcode == MOVE)
         {
-            value = detach_path(object, (unsigned char*)from->valuestring, case_sensitive);
+            value = detach_path(object, (unsigned char*)from->value.v_string, case_sensitive);
         }
         if (opcode == COPY)
         {
-            value = get_item_from_pointer(object, from->valuestring, case_sensitive);
+            value = get_item_from_pointer(object, from->value.v_string, case_sensitive);
         }
         if (value == NULL)
         {
@@ -959,7 +971,7 @@ static int apply_patch(cJSON *object, const cJSON *patch, const cJSON_bool case_
     /* Now, just add "value" to "path". */
 
     /* split pointer in parent and child */
-    parent_pointer = cJSONUtils_strdup((unsigned char*)path->valuestring);
+    parent_pointer = cJSONUtils_strdup((unsigned char*)path->value.v_string);
     if (parent_pointer) {
         child_pointer = (unsigned char*)strrchr((char*)parent_pointer, '/');
     }
@@ -1048,7 +1060,7 @@ CJSON_PUBLIC(int) cJSONUtils_ApplyPatches(cJSON * const object, const cJSON * co
 
     if (patches != NULL)
     {
-        current_patch = patches->child;
+        current_patch = patches->value.child;
     }
 
     while (current_patch != NULL)
@@ -1077,7 +1089,7 @@ CJSON_PUBLIC(int) cJSONUtils_ApplyPatchesCaseSensitive(cJSON * const object, con
 
     if (patches != NULL)
     {
-        current_patch = patches->child;
+        current_patch = patches->value.child;
     }
 
     while (current_patch != NULL)
@@ -1154,14 +1166,18 @@ static void create_patches(cJSON * const patches, const unsigned char * const pa
     switch (from->type & 0xFF)
     {
         case cJSON_Number:
-            if ((from->valueint != to->valueint) || !compare_double(from->valuedouble, to->valuedouble))
+            if (
+#ifdef ENABLE_VALUE_INT							
+							(from->value.v_int != to->value.v_int) || 
+#endif						
+							!compare_double(from->value.v_double, to->value.v_double))
             {
                 compose_patch(patches, (const unsigned char*)"replace", path, NULL, to);
             }
             return;
 
         case cJSON_String:
-            if (strcmp(from->valuestring, to->valuestring) != 0)
+            if (strcmp(from->value.v_string, to->value.v_string) != 0)
             {
                 compose_patch(patches, (const unsigned char*)"replace", path, NULL, to);
             }
@@ -1170,8 +1186,8 @@ static void create_patches(cJSON * const patches, const unsigned char * const pa
         case cJSON_Array:
         {
             size_t index = 0;
-            cJSON *from_child = from->child;
-            cJSON *to_child = to->child;
+            cJSON *from_child = from->value.child;
+            cJSON *to_child = to->value.child;
             unsigned char *new_path = (unsigned char*)cJSON_malloc(strlen((const char*)path) + 20 + sizeof("/")); /* Allow space for 64bit int. log10(2^64) = 20 */
 
             /* generate patches for all array elements that exist in both "from" and "to" */
@@ -1219,8 +1235,8 @@ static void create_patches(cJSON * const patches, const unsigned char * const pa
             sort_object(from, case_sensitive);
             sort_object(to, case_sensitive);
 
-            from_child = from->child;
-            to_child = to->child;
+            from_child = from->value.child;
+            to_child = to->value.child;
             /* for all object values in the object with more of them */
             while ((from_child != NULL) || (to_child != NULL))
             {
@@ -1335,7 +1351,7 @@ static cJSON *merge_patch(cJSON *target, const cJSON * const patch, const cJSON_
         target = cJSON_CreateObject();
     }
 
-    patch_child = patch->child;
+    patch_child = patch->value.child;
     while (patch_child != NULL)
     {
         if (cJSON_IsNull(patch_child))
@@ -1406,8 +1422,8 @@ static cJSON *generate_merge_patch(cJSON * const from, cJSON * const to, const c
     sort_object(from, case_sensitive);
     sort_object(to, case_sensitive);
 
-    from_child = from->child;
-    to_child = to->child;
+    from_child = from->value.child;
+    to_child = to->value.child;
     patch = cJSON_CreateObject();
     if (patch == NULL)
     {
@@ -1460,7 +1476,7 @@ static cJSON *generate_merge_patch(cJSON * const from, cJSON * const to, const c
             to_child = to_child->next;
         }
     }
-    if (patch->child == NULL)
+    if (patch->value.child == NULL)
     {
         /* no patch generated */
         cJSON_Delete(patch);
